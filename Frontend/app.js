@@ -1,3 +1,16 @@
+document.getElementById('file-input').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        const text = event.target.result;
+        const lines = text.trim().split('\n');
+        const points = lines.map(line => line.trim());
+        document.getElementById('points').value = points.join(' ');
+    };
+    reader.readAsText(file);
+});
 document.getElementById('interpolation-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     

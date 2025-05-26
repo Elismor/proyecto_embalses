@@ -11,6 +11,11 @@
         <h1>Predicción de Nivel de Agua</h1>
         <form id="interpolation-form">
             <div class="form-group">
+                <label for="file-input">Cargar archivo CSV con puntos (x,y):</label>
+                <input type="file" id="file-input" accept=".csv" />
+                <small>El archivo debe tener formato: x,y por línea</small>
+            </div>
+            <div class="form-group">
                 <label for="points">Puntos (X,Y):</label>
                 <textarea id="points" rows="4" required></textarea>
                 <small>Formato: x1,y1 x2,y2 x3,y3</small>
