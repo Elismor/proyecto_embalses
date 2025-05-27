@@ -1,75 +1,86 @@
-document.getElementById('file-input').addEventListener('change', function(e) {
+const fileInput = document.getElementById('file-input');
+const pointsTextarea = document.getElementById('points');
+const form = document.getElementById('interpolation-form');
+const resultDiv = document.getElementById('result');
+const downloadBtn = document.getElementById('download-graph');
+const canvas = document.getElementById('myChart');
+let chartInstance = null;
+
+let latestPoints = [];
+let latestEstimatedPoint = null;
+
+// Leer archivo CSV y llenar textarea
+fileInput.addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
-    reader.onload = function(event) {
-        const text = event.target.result;
-        const lines = text.trim().split('\n');
-        const points = lines.map(line => line.trim());
-        document.getElementById('points').value = points.join(' ');
+    reader.onload = evt => {
+        const lines = evt.target.result.trim().split('\n');
+        pointsTextarea.value = lines.map(line => line.trim()).join(' ');
     };
     reader.readAsText(file);
 });
 
-document.getElementById('interpolation-form').addEventListener('submit', async (e) => {
+// Enviar datos y obtener interpolación
+form.addEventListener('submit', async e => {
     e.preventDefault();
-    
-    const pointsText = document.getElementById('points').value;
-    const xValue = document.getElementById('x-value').value;
+    const pointsText = pointsTextarea.value.trim();
+    const xValue = parseFloat(document.getElementById('x-value').value);
     const method = document.getElementById('method').value;
-    const resultDiv = document.getElementById('result');
 
-    const points = pointsText.split(' ').map(point => {
-        const [x, y] = point.split(',').map(Number);
+    if (!pointsText) {
+        alert('Por favor, ingresa los puntos.');
+        return;
+    }
+
+    // configurar puntos
+    const points = pointsText.split(' ').map(p => {
+        const [x, y] = p.split(',').map(Number);
         return [x, y];
     });
 
     try {
-        const response = await fetch('http://127.0.0.1:5000/api/calculate', {
+        const res = await fetch('http://127.0.0.1:5000/api/calculate', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                points: points,
-                x: parseFloat(xValue),
-                method: method
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ points, x: xValue, method })
         });
-
-        const data = await response.json();
+        const data = await res.json();
 
         if (data.status === 'success') {
+            latestPoints = points;
+            latestEstimatedPoint = [xValue, data.y_estimated];
+
             resultDiv.innerHTML = `
                 <p><strong>Resultado:</strong> Y ≈ ${data.y_estimated.toFixed(4)}</p>
                 <p><strong>Método:</strong> ${method === 'linear' ? 'Lineal' : 'Lagrange'}</p>
-                <canvas id="myChart" width="400" height="200"></canvas>
             `;
-            renderChart(points, data.y_estimated, parseFloat(xValue), method);
+
+            downloadBtn.style.display = 'inline-block';
+            canvas.style.display = 'block';
+
+            renderChart(points, data.y_estimated, xValue, method);
         } else {
-            resultDiv.innerHTML = `<p class="error">Error: ${data.message}</p>`;
+            resultDiv.innerHTML = `<p style="color:red;">Error: ${data.message}</p>`;
+            downloadBtn.style.display = 'none';
+            canvas.style.display = 'none';
         }
-    } catch (error) {
-        resultDiv.innerHTML = `<p class="error">Error de conexión: ${error.message}</p>`;
+    } catch (err) {
+        resultDiv.innerHTML = `<p style="color:red;">Error de conexión: ${err.message}</p>`;
+        downloadBtn.style.display = 'none';
+        canvas.style.display = 'none';
     }
 });
 
+// gráfico con Chart.js
 function renderChart(points, estimatedY, targetX, method) {
-    const ctx = document.getElementById('myChart').getContext('2d');
-
-    // Asegurarse de que el gráfico anterior exista antes de destruirlo
-    if (window.myChart && typeof window.myChart.destroy === 'function') {
-        window.myChart.destroy();
-    }
-
-    const labels = points.map(p => p[0]);
-    const dataPoints = points.map(p => p[1]);
+    const ctx = canvas.getContext('2d');
+    if (chartInstance) chartInstance.destroy();
 
     const datasets = [
         {
             label: 'Puntos dados',
-            data: points.map(([x, y]) => ({ x, y })),
+            data: points.map(([x,y]) => ({x,y})),
             borderColor: 'gray',
             backgroundColor: 'gray',
             showLine: false,
@@ -77,49 +88,77 @@ function renderChart(points, estimatedY, targetX, method) {
         },
         {
             label: `Interpolación ${method === 'linear' ? 'Lineal' : 'Lagrange'}`,
-            data: [
-                ...points.map(([x, _]) => ({ x, y: null })),
-                { x: targetX, y: estimatedY }
-            ],
+            data: [...points.map(([x]) => ({x, y: null})), {x: targetX, y: estimatedY}],
             borderColor: method === 'linear' ? 'blue' : 'green',
             backgroundColor: 'transparent',
             borderWidth: 2,
-            tension: 0.3
+            tension: 0.3,
+            showLine: true,
+            fill: false,
         },
         {
             label: 'Valor estimado',
-            data: [{ x: targetX, y: estimatedY }],
+            data: [{x: targetX, y: estimatedY}],
             borderColor: 'red',
             backgroundColor: 'red',
-            pointRadius: 6
+            pointRadius: 7,
+            showLine: false
         }
     ];
 
-    window.myChart = new Chart(ctx, {
+    chartInstance = new Chart(ctx, {
         type: 'scatter',
-        data: {
-            datasets: datasets
-        },
+        data: { datasets },
         options: {
             scales: {
-                x: {
-                    title: {
-                        display: true,
-                        text: 'X'
-                    }
-                },
-                y: {
-                    title: {
-                        display: true,
-                        text: 'Y'
-                    }
-                }
+                x: { title: { display: true, text: 'X' } },
+                y: { title: { display: true, text: 'Y' } }
             },
-            plugins: {
-                legend: {
-                    position: 'top'
-                }
-            }
+            plugins: { legend: { position: 'top' } }
         }
     });
 }
+
+// Función para descargar CSV con puntos y punto interpolado
+function downloadCSV(points, estimatedPoint) {
+    let csv = "X,Y\n";
+    points.forEach(([x,y]) => { csv += `${x},${y}\n`; });
+    csv += `${estimatedPoint[0]},${estimatedPoint[1]}\n`;
+
+    const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'datos_interpolacion.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// Descargar imagen y CSV al click en botón
+downloadBtn.addEventListener('click', () => {
+    if (!latestPoints.length || !latestEstimatedPoint) {
+        alert('No hay datos para descargar.');
+        return;
+    }
+
+    // Descargar CSV
+    downloadCSV(latestPoints, latestEstimatedPoint);
+
+    // Mostrar imagen en popup para descargar
+    const imageURL = canvas.toDataURL('image/png');
+    const popup = window.open('', '_blank');
+    popup.document.write(`
+        <html><head><title>Gráfica Interpolada</title></head>
+        <body style="text-align:center; font-family:Arial, sans-serif;">
+            <h2>Gráfica Interpolada</h2>
+            <img src="${imageURL}" style="max-width:100%; height:auto;" />
+            <br><br>
+            <a href="${imageURL}" download="grafica_interpolada.png">
+                <button>Descargar Imagen</button>
+            </a>
+        </body></html>
+    `);
+});
